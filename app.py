@@ -13,7 +13,7 @@ def load_sheet():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
     gc = gspread.authorize(credentials)
-    sh = gc.open_by_key("1PrsSMbPddsn1FnjC4Fao2XJ63f1kG4u8X9aWZwmdK1A")  # Your sheet key
+    sh = gc.open_by_key("1PrsSMbPddsn1FnjC4Fao2XJ63f1kG4u8X9aWZwmdK1A")
     ws = sh.get_worksheet(0)
     df = get_as_dataframe(ws).dropna(how='all')
     df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
@@ -24,6 +24,7 @@ df = load_sheet()
 # -----------------------
 # App UI
 # -----------------------
+st.set_page_config(layout="wide")
 st.title("📦 Stock Order System")
 
 # Step 1: Ask customer name
@@ -38,41 +39,61 @@ with st.form("customer_form"):
 
 st.success(f"Placing order for: {customer_name}")
 
-# Step 2: Show available products and get quantities
+# Step 2: Show available products + sticky submit button
 st.write("## 📋 Available Products")
 
-with st.form("order_form"):
-    selected_items = []
+left, right = st.columns([6, 1])
 
-    for i, row in df.iterrows():
-        cols = st.columns([4, 3, 3, 4])
-        cols[0].markdown(f"**{row['SkuShortName']}**")
-        cols[1].markdown("SKU: -")  # No SKU in your sheet
-        cols[2].markdown(f"Available: {row['Available Qty']}")
-        qty = cols[3].number_input(
-            "Qty",
-            min_value=0,
-            max_value=int(row["Available Qty"]),
-            step=1,
-            key=f"qty_{i}"
-        )
-        if qty > 0:
-            row_data = row.to_dict()
-            row_data["Order Quantity"] = qty
-            row_data["Customer Name"] = customer_name
-            selected_items.append(row_data)
+selected_items = []
 
-    generate = st.form_submit_button("✅ Submit Order")
+with left:
+    with st.form("order_form"):
+        for i, row in df.iterrows():
+            cols = st.columns([4, 3, 3, 4])
+            cols[0].markdown(f"**{row['SkuShortName']}**")
+            cols[1].markdown("SKU: -")
+            cols[2].markdown(f"Available: {row['Available Qty']}")
+            qty = cols[3].number_input(
+                "Qty",
+                min_value=0,
+                max_value=int(row["Available Qty"]),
+                step=1,
+                key=f"qty_{i}"
+            )
+            if qty > 0:
+                row_data = row.to_dict()
+                row_data["Order Quantity"] = qty
+                row_data["Customer Name"] = customer_name
+                selected_items.append(row_data)
 
-# Step 3: Show summary (printable format + download + print button)
+        generate = st.form_submit_button("✅ Submit Order")
+
+with right:
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+    st.markdown("### ")
+
+# Step 3: Show summary + print + download
 if generate:
     if not selected_items:
-        st.warning("No items selected!")
+        st.warning("⚠️ No items selected! Please enter quantity for at least one product.")
     else:
         order_df = pd.DataFrame(selected_items)
         order_df = order_df[["Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
 
-        # ---- ✅ Generate HTML printable content ----
+        # 📄 Printable HTML
         html_summary = f"""
         <div id="print-area" style='border:1px solid #ccc; padding:20px; border-radius:10px; background-color:#fff; font-family:monospace;'>
             <h2 style='text-align:center;'>🧾 Order Receipt</h2>
@@ -103,7 +124,6 @@ if generate:
             <p style='margin-top:20px;'><strong>Total Items Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
         </div>
 
-        <!-- Print Button -->
         <div style='text-align:right; margin-top: 20px;'>
             <button onclick="window.print()" style='padding: 10px 20px; font-size: 16px; background-color: #00b300; color: white; border: none; border-radius: 5px; cursor: pointer;'>🖨️ Print Summary</button>
         </div>
@@ -112,7 +132,7 @@ if generate:
         st.markdown("## 🧾 Printable Order Summary")
         st.components.v1.html(html_summary, height=500, scrolling=True)
 
-        # ---- ✅ Excel Download ----
+        # 📥 Excel Download
         def to_excel(df):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
