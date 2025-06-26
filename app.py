@@ -42,7 +42,7 @@ with st.form("order_form"):
     for i, row in df.iterrows():
         cols = st.columns([4, 3, 3, 4])
         cols[0].markdown(f"**{row['SkuShortName']}**")
-        cols[1].markdown(f"SKU: {row['SKU']}")
+        cols[1].markdown("SKU: -")  # SKU removed, replaced with placeholder
         cols[2].markdown(f"Available: {row['Available Qty']}")
         qty = cols[3].number_input(
             "Qty",
@@ -63,7 +63,7 @@ if generate:
         order_df = pd.DataFrame(selected_items)
         order_df.insert(0, "Customer Name", customer_name)
         st.write("## 🧾 Order Summary")
-        st.dataframe(order_df[["Customer Name", "SKU", "SkuShortName", "Available Qty", "Order Quantity"]])
+        st.dataframe(order_df[["Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]])
 
         # Convert to Excel
         def to_excel(df):
