@@ -64,17 +64,55 @@ with st.form("order_form"):
 
     generate = st.form_submit_button("✅ Submit Order")
 
-# Step 3: Show and download summary
+# Step 3: Show summary (printable format + download + print button)
 if generate:
     if not selected_items:
         st.warning("No items selected!")
     else:
         order_df = pd.DataFrame(selected_items)
+        order_df = order_df[["Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
 
-        st.write("## 🧾 Order Summary")
-        st.dataframe(order_df[["Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]])
+        # ---- ✅ Generate HTML printable content ----
+        html_summary = f"""
+        <div id="print-area" style='border:1px solid #ccc; padding:20px; border-radius:10px; background-color:#fff; font-family:monospace;'>
+            <h2 style='text-align:center;'>🧾 Order Receipt</h2>
+            <p><strong>Customer:</strong> {customer_name}</p>
+            <table style='width:100%; border-collapse: collapse; margin-top:20px;'>
+                <thead>
+                    <tr style='text-align: left; border-bottom: 2px solid #000;'>
+                        <th style='padding: 8px;'>Product</th>
+                        <th style='padding: 8px;'>Available</th>
+                        <th style='padding: 8px;'>Ordered</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
 
-        # Convert to Excel
+        for _, row in order_df.iterrows():
+            html_summary += f"""
+                <tr style='border-bottom: 1px solid #ddd;'>
+                    <td style='padding: 8px;'>{row['SkuShortName']}</td>
+                    <td style='padding: 8px;'>{row['Available Qty']}</td>
+                    <td style='padding: 8px;'>{row['Order Quantity']}</td>
+                </tr>
+            """
+
+        html_summary += f"""
+                </tbody>
+            </table>
+            <p style='margin-top:20px;'><strong>Total Items Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
+        </div>
+
+        <!-- Print Button -->
+        <div style='text-align:right; margin-top: 20px;'>
+            <button onclick="window.print()" style='padding: 10px 20px; font-size: 16px; background-color: #00b300; color: white; border: none; border-radius: 5px; cursor: pointer;'>🖨️ Print Summary</button>
+        </div>
+        """
+
+        st.markdown("## 🧾 Printable Order Summary")
+        st.components.v1.html(html_summary, height=500, scrolling=True)
+
+        # ---- ✅ Excel Download ----
         def to_excel(df):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -84,7 +122,7 @@ if generate:
         excel_data = to_excel(order_df)
 
         st.download_button(
-            label="⬇️ Download Order Summary",
+            label="⬇️ Download Order Summary as Excel",
             data=excel_data,
             file_name=f"order_{customer_name.replace(' ', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
