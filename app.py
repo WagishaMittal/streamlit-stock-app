@@ -5,61 +5,76 @@ from gspread_dataframe import get_as_dataframe
 from io import BytesIO
 from google.oauth2.service_account import Credentials
 
+# Load from Google Sheets
 def load_sheet():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
     gc = gspread.authorize(credentials)
-    sh = gc.open_by_key("1PrsSMbPddsn1FnjC4Fao2XJ63f1kG4u8X9aWZwmdK1A")  # your sheet ID
+    sh = gc.open_by_key("1PrsSMbPddsn1FnjC4Fao2XJ63f1kG4u8X9aWZwmdK1A")  # Update if sheet changes
     ws = sh.get_worksheet(0)
-    df = get_as_dataframe(ws).dropna(how="all")
+    df = get_as_dataframe(ws).dropna(how='all')
     df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
     return df
 
+# Load sheet
 df = load_sheet()
 
+# UI Starts
 st.title("📦 Stock Order System")
 
-customer_name = st.sidebar.text_input("Customer Name")
-customer_id = st.sidebar.text_input("Customer ID")
-if not customer_name or not customer_id:
-    st.warning("Enter customer name and ID")
-    st.stop()
+# Form to collect customer name
+with st.form("customer_form"):
+    customer_name = st.text_input("Enter Customer Name")
+    submitted_name = st.form_submit_button("Proceed")
+    if not submitted_name:
+        st.stop()
+    elif not customer_name.strip():
+        st.warning("Please enter a valid customer name to continue.")
+        st.stop()
 
-search = st.text_input("Search SKU or Name")
-filtered_df = df.copy()
-if search:
-    filtered_df = df[df["SkuShortName"].str.contains(search, case=False) | df["SKU"].str.contains(search, case=False)]
+st.success(f"Placing order for: {customer_name}")
 
-st.write("### Enter Quantities")
+# Product selection with quantity
+st.write("## 📋 Available Products")
 with st.form("order_form"):
-    updated = []
-    for i, row in filtered_df.iterrows():
-        cols = st.columns([3, 5, 2, 3])
-        cols[0].markdown(f"**{row['SKU']}**")
-        cols[1].markdown(row['SkuShortName'])
-        cols[2].markdown(f"{row['Available Qty']}")
-        qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{i}")
-        updated.append({**row, "Order Quantity": qty})
+    selected_items = []
+    for i, row in df.iterrows():
+        cols = st.columns([4, 3, 3, 4])
+        cols[0].markdown(f"**{row['SkuShortName']}**")
+        cols[1].markdown(f"SKU: {row['SKU']}")
+        cols[2].markdown(f"Available: {row['Available Qty']}")
+        qty = cols[3].number_input(
+            "Qty",
+            min_value=0,
+            max_value=int(row["Available Qty"]),
+            step=1,
+            key=f"qty_{i}"
+        )
+        if qty > 0:
+            selected_items.append({**row, "Order Quantity": qty})
 
-    submit = st.form_submit_button("Generate Order")
+    generate = st.form_submit_button("✅ Submit Order")
 
-if submit:
-    order_df = pd.DataFrame(updated)
-    order_summary = order_df[order_df["Order Quantity"] > 0]
-    if not order_summary.empty:
-        st.success("✅ Order Ready!")
-        order_summary.insert(0, "Customer Name", customer_name)
-        order_summary.insert(1, "Customer ID", customer_id)
-
-        def to_excel(data):
-            out = BytesIO()
-            with pd.ExcelWriter(out, engine="openpyxl") as writer:
-                data.to_excel(writer, index=False)
-            return out.getvalue()
-
-        st.download_button("⬇️ Download Order", to_excel(order_summary),
-                           file_name=f"order_{customer_id}.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+if generate:
+    if not selected_items:
+        st.warning("No items selected!")
     else:
-        st.warning("⚠️ No items selected.")
+        order_df = pd.DataFrame(selected_items)
+        order_df.insert(0, "Customer Name", customer_name)
+        st.write("## 🧾 Order Summary")
+        st.dataframe(order_df[["Customer Name", "SKU", "SkuShortName", "Available Qty", "Order Quantity"]])
+
+        # Convert to Excel
+        def to_excel(df):
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df.to_excel(writer, index=False, sheet_name="Order Summary")
+            return output.getvalue()
+
+        st.download_button(
+            label="⬇️ Download Order Summary",
+            data=to_excel(order_df),
+            file_name=f"order_{customer_name.replace(' ', '_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
