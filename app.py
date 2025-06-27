@@ -41,7 +41,7 @@ with st.form("order_form"):
     for i, row in df.iterrows():
         cols = st.columns([4, 3, 3, 2])
         cols[0].markdown(f"**{row['SkuShortName']}**")
-        cols[1].markdown("SKU: -")
+        cols[1].markdown("SKU: -")  # SKU placeholder
         cols[2].markdown(f"Available: {row['Available Qty']}")
         qty_inputs[i] = cols[3].number_input("Qty", min_value=0, max_value=int(row["Available Qty"]), step=1, key=f"qty_{i}")
     generate = st.form_submit_button("✅ Submit Order")
@@ -64,12 +64,13 @@ if generate:
     order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
     st.write("Saving the following order data:", order_df)
 
-    # Save to Sheet (debug-safe)
+    # Save to Sheet
     try:
         try:
             worksheet = sheet.worksheet("Orders")
         except gspread.exceptions.WorksheetNotFound:
             worksheet = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
+
         existing = get_as_dataframe(worksheet).dropna(how='all')
         combined = pd.concat([existing, order_df], ignore_index=True)
         worksheet.clear()
@@ -79,25 +80,35 @@ if generate:
         st.error(f"❗ Error saving to sheet: {e}")
 
     # Printable Summary
-    html = f"""
-    <div id='print-area' style='padding:20px;'>
+    printable_html = f"""
+    <html>
+    <head><style>
+        @media print {{
+            button {{ display: none; }}
+        }}
+        table {{ width: 100%; border-collapse: collapse; }}
+        th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
+    </style></head>
+    <body>
+    <div style='padding:20px;'>
         <h2>🧾 Order Summary</h2>
         <p><strong>Customer:</strong> {customer_name}</p>
         <p><strong>Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-        <table border='1' style='border-collapse:collapse;width:100%'>
-            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>"""
-
+        <table>
+            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>
+    """
     for _, row in order_df.iterrows():
-        html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Available Qty']}</td><td>{row['Order Quantity']}</td></tr>"
+        printable_html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Available Qty']}</td><td>{row['Order Quantity']}</td></tr>"
 
-    html += f"""
+    printable_html += f"""
         </table>
         <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
-        <button onclick='window.print()' style='margin-top:10px;padding:10px;background:#4CAF50;color:white;border:none;'>🖨️ Print</button>
-    </div>"""
+        <button onclick='window.print()'>🖨️ Print</button>
+    </div>
+    </body></html>"""
 
     st.markdown("## 🧾 Download & Print")
-    st.components.v1.html(html, height=600, scrolling=True)
+    st.components.v1.html(printable_html, height=600, scrolling=True)
 
     def to_excel(df):
         output = BytesIO()
