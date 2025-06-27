@@ -1,9 +1,10 @@
 import streamlit as st
 import gspread
 import pandas as pd
-from gspread_dataframe import get_as_dataframe
+from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from io import BytesIO
 from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 # Load Google Sheet
 def load_sheet():
@@ -15,9 +16,9 @@ def load_sheet():
     ws = sh.get_worksheet(0)
     df = get_as_dataframe(ws).dropna(how='all')
     df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
-    return df
+    return df, sh
 
-df = load_sheet()
+df, sheet = load_sheet()
 st.set_page_config(layout="wide")
 st.title("📦 Stock Order System")
 
@@ -54,18 +55,33 @@ if generate:
             row_data = row.to_dict()
             row_data["Order Quantity"] = qty
             row_data["Customer Name"] = customer_name
+            row_data["Timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             selected_items.append(row_data)
 
     if not selected_items:
         st.warning("⚠️ No items selected! Please enter quantity for at least one product.")
     else:
-        order_df = pd.DataFrame(selected_items)[["Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
+        order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
+
+        # Save to Google Sheet
+        try:
+            try:
+                worksheet = sheet.worksheet("Orders")
+            except gspread.exceptions.WorksheetNotFound:
+                worksheet = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
+            existing_data = get_as_dataframe(worksheet).dropna(how='all')
+            updated_data = pd.concat([existing_data, order_df], ignore_index=True)
+            worksheet.clear()
+            set_with_dataframe(worksheet, updated_data)
+        except Exception as e:
+            st.error(f"Error saving to Google Sheet: {e}")
 
         # Printable HTML
         html = f"""
         <div id="print-area" style='padding:20px; font-family:sans-serif;'>
             <h2>🧾 Order Summary</h2>
             <p><strong>Customer:</strong> {customer_name}</p>
+            <p><strong>Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
             <table style='width:100%; border-collapse: collapse;'>
                 <tr><th style='border:1px solid #ccc; padding:8px;'>Product</th>
                     <th style='border:1px solid #ccc; padding:8px;'>Available</th>
