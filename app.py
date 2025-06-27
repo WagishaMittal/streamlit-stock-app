@@ -18,12 +18,13 @@ def load_sheet():
     df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
     return df, sh
 
-df, sheet = load_sheet()
+# Load data and sheet
 st.set_page_config(layout="wide")
 st.title("📦 Stock Order System")
+df, sheet = load_sheet()
 
-# Step 1: Customer Name
-with st.form("name_form", clear_on_submit=False):
+# Step 1: Customer Name Input
+with st.form("name_form"):
     customer_name = st.text_input("Enter Customer Name")
     proceed = st.form_submit_button("Proceed")
 
@@ -31,14 +32,12 @@ if not proceed or not customer_name.strip():
     st.stop()
 
 st.success(f"Placing order for: {customer_name}")
-
-# Step 2: Product Selection with Quantities
 st.write("## 📋 Available Products")
 
+# Step 2: Quantity Selection
 selected_items = []
 qty_inputs = {}
-
-with st.form("order_form", clear_on_submit=False):
+with st.form("order_form"):
     for i, row in df.iterrows():
         cols = st.columns([4, 3, 3, 2])
         cols[0].markdown(f"**{row['SkuShortName']}**")
@@ -47,7 +46,7 @@ with st.form("order_form", clear_on_submit=False):
         qty_inputs[i] = cols[3].number_input("Qty", min_value=0, max_value=int(row["Available Qty"]), step=1, key=f"qty_{i}")
     generate = st.form_submit_button("✅ Submit Order")
 
-# Step 3: Order Summary
+# Step 3: Generate Summary and Save
 if generate:
     for i, row in df.iterrows():
         qty = qty_inputs[i]
@@ -59,61 +58,55 @@ if generate:
             selected_items.append(row_data)
 
     if not selected_items:
-        st.warning("⚠️ No items selected! Please enter quantity for at least one product.")
-    else:
-        order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
+        st.warning("⚠️ No items selected!")
+        st.stop()
 
-        # Save to Google Sheet
+    order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
+    st.write("Saving the following order data:", order_df)
+
+    # Save to Sheet (debug-safe)
+    try:
         try:
-            try:
-                worksheet = sheet.worksheet("Orders")
-            except gspread.exceptions.WorksheetNotFound:
-                worksheet = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
-            existing_data = get_as_dataframe(worksheet).dropna(how='all')
-            updated_data = pd.concat([existing_data, order_df], ignore_index=True)
-            worksheet.clear()
-            set_with_dataframe(worksheet, updated_data)
-        except Exception as e:
-            st.error(f"Error saving to Google Sheet: {e}")
+            worksheet = sheet.worksheet("Orders")
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
+        existing = get_as_dataframe(worksheet).dropna(how='all')
+        combined = pd.concat([existing, order_df], ignore_index=True)
+        worksheet.clear()
+        set_with_dataframe(worksheet, combined)
+        st.success("✔️ Order saved to Google Sheet!")
+    except Exception as e:
+        st.error(f"❗ Error saving to sheet: {e}")
 
-        # Printable HTML
-        html = f"""
-        <div id="print-area" style='padding:20px; font-family:sans-serif;'>
-            <h2>🧾 Order Summary</h2>
-            <p><strong>Customer:</strong> {customer_name}</p>
-            <p><strong>Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-            <table style='width:100%; border-collapse: collapse;'>
-                <tr><th style='border:1px solid #ccc; padding:8px;'>Product</th>
-                    <th style='border:1px solid #ccc; padding:8px;'>Available</th>
-                    <th style='border:1px solid #ccc; padding:8px;'>Ordered</th></tr>"""
+    # Print View
+    html = f"""
+    <div id='print-area' style='padding:20px;'>
+        <h2>🧾 Order Summary</h2>
+        <p><strong>Customer:</strong> {customer_name}</p>
+        <p><strong>Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+        <table border='1' style='border-collapse:collapse;width:100%'>
+            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>"""
 
-        for _, row in order_df.iterrows():
-            html += f"""
-            <tr>
-                <td style='border:1px solid #ccc; padding:8px;'>{row['SkuShortName']}</td>
-                <td style='border:1px solid #ccc; padding:8px;'>{row['Available Qty']}</td>
-                <td style='border:1px solid #ccc; padding:8px;'>{row['Order Quantity']}</td>
-            </tr>"""
+    for _, row in order_df.iterrows():
+        html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Available Qty']}</td><td>{row['Order Quantity']}</td></tr>"
 
-        html += f"""
-            </table>
-            <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
-            <button onclick="window.print()" style='margin-top:10px;padding:10px 20px;background-color:#4CAF50;color:white;border:none;border-radius:5px;'>🖨️ Print</button>
-        </div>"""
+    html += f"""
+        </table>
+        <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
+        <button onclick='window.print()' style='margin-top:10px;padding:10px;background:#4CAF50;color:white;border:none;'>🖨️ Print</button>
+    </div>"""
 
-        st.markdown("## 🧾 Download & Print")
-        st.components.v1.html(html, height=500, scrolling=True)
+    st.components.v1.html(html, height=600, scrolling=True)
 
-        # Excel Export
-        def to_excel(df):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Order Summary')
-            return output.getvalue()
+    def to_excel(df):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Order Summary')
+        return output.getvalue()
 
-        st.download_button(
-            label="⬇️ Download Order Summary as Excel",
-            data=to_excel(order_df),
-            file_name=f"order_{customer_name.replace(' ', '_')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    st.download_button(
+        label="⬇️ Download Order Summary as Excel",
+        data=to_excel(order_df),
+        file_name=f"order_{customer_name.replace(' ', '_')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
