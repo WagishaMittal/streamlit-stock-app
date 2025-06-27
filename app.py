@@ -48,8 +48,7 @@ with st.form("order_form"):
 
 # Step 3: Generate Summary and Save
 if generate:
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    sheet_name = f"{customer_name}_{timestamp}".replace(" ", "_")[:100]
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     for i, row in df.iterrows():
         qty = qty_inputs[i]
@@ -66,39 +65,50 @@ if generate:
 
     order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
 
-    # Save to a new worksheet named after customer and time
+    # Save to central 'Orders' sheet
     try:
-        new_ws = sheet.add_worksheet(title=sheet_name, rows="100", cols="10")
-        set_with_dataframe(new_ws, order_df)
-        st.success(f"✔️ Order saved to new sheet: {sheet_name}")
+        try:
+            orders_ws = sheet.worksheet("Orders")
+        except gspread.exceptions.WorksheetNotFound:
+            orders_ws = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
+
+        existing_orders = get_as_dataframe(orders_ws).dropna(how='all')
+        updated_orders = pd.concat([existing_orders, order_df], ignore_index=True)
+        orders_ws.clear()
+        set_with_dataframe(orders_ws, updated_orders)
+        st.success("✔️ Order saved to sheet: Orders")
     except Exception as e:
         st.error(f"❗ Could not save order: {e}")
 
     # Printable Summary
+    st.markdown("## 🧾 Order Summary")
+    st.dataframe(order_df)
+
     printable_html = f"""
-    <html>
-    <head><style>
-        @media print {{ button {{ display: none; }} }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
-    </style></head>
-    <body>
     <div style='padding:20px;'>
         <h2>🧾 Order Summary</h2>
         <p><strong>Customer:</strong> {customer_name}</p>
         <p><strong>Date:</strong> {timestamp}</p>
-        <table>
-            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>"""
+        <table style='width:100%; border-collapse: collapse;'>
+            <thead>
+                <tr><th style='border:1px solid #ccc; padding:8px;'>Product</th>
+                    <th style='border:1px solid #ccc; padding:8px;'>Available</th>
+                    <th style='border:1px solid #ccc; padding:8px;'>Ordered</th></tr>
+            </thead>
+            <tbody>
+    """
     for _, row in order_df.iterrows():
-        printable_html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Available Qty']}</td><td>{row['Order Quantity']}</td></tr>"
+        printable_html += f"<tr><td style='border:1px solid #ccc; padding:8px;'>{row['SkuShortName']}</td>"
+        printable_html += f"<td style='border:1px solid #ccc; padding:8px;'>{row['Available Qty']}</td>"
+        printable_html += f"<td style='border:1px solid #ccc; padding:8px;'>{row['Order Quantity']}</td></tr>"
+
     printable_html += f"""
+            </tbody>
         </table>
         <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
-        <button onclick='window.print()'>🖨️ Print</button>
-    </div>
-    </body></html>"""
+        <button onclick='window.print()' style='margin-top:10px;padding:10px 20px;background:#4CAF50;color:white;border:none;border-radius:5px;'>🖨️ Print</button>
+    </div>"""
 
-    st.markdown("## 🧾 Download & Print")
     st.components.v1.html(printable_html, height=600, scrolling=True)
 
     def to_excel(df):
@@ -110,6 +120,6 @@ if generate:
     st.download_button(
         label="⬇️ Download Order Summary as Excel",
         data=to_excel(order_df),
-        file_name=f"order_{sheet_name}.xlsx",
+        file_name=f"order_{customer_name.replace(' ', '_')}_{timestamp.replace(':', '-')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
