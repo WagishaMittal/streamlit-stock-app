@@ -7,6 +7,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # Load Google Sheet
+
 def load_sheet():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -39,22 +40,24 @@ selected_items = []
 qty_inputs = {}
 with st.form("order_form"):
     for i, row in df.iterrows():
-        cols = st.columns([4, 3, 3, 2])
+        cols = st.columns([6, 3, 3])
         cols[0].markdown(f"**{row['SkuShortName']}**")
-        cols[1].markdown("SKU: -")  # SKU placeholder
-        cols[2].markdown(f"Available: {row['Available Qty']}")
-        qty_inputs[i] = cols[3].number_input("Qty", min_value=0, max_value=int(row["Available Qty"]), step=1, key=f"qty_{i}")
+        cols[1].markdown(f"Available: {row['Available Qty']}")
+        qty_inputs[i] = cols[2].number_input("Qty", min_value=0, max_value=int(row["Available Qty"]), step=1, key=f"qty_{i}")
     generate = st.form_submit_button("✅ Submit Order")
 
 # Step 3: Generate Summary and Save
 if generate:
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    sheet_name = f"{customer_name}_{timestamp}".replace(" ", "_")[:100]
+
     for i, row in df.iterrows():
         qty = qty_inputs[i]
         if qty > 0:
             row_data = row.to_dict()
             row_data["Order Quantity"] = qty
             row_data["Customer Name"] = customer_name
-            row_data["Timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            row_data["Timestamp"] = timestamp
             selected_items.append(row_data)
 
     if not selected_items:
@@ -62,30 +65,20 @@ if generate:
         st.stop()
 
     order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
-    st.write("Saving the following order data:", order_df)
 
-    # Save to Sheet
+    # Save to a new worksheet named after customer and time
     try:
-        try:
-            worksheet = sheet.worksheet("Orders")
-        except gspread.exceptions.WorksheetNotFound:
-            worksheet = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
-
-        existing = get_as_dataframe(worksheet).dropna(how='all')
-        combined = pd.concat([existing, order_df], ignore_index=True)
-        worksheet.clear()
-        set_with_dataframe(worksheet, combined)
-        st.success("✔️ Order saved to Google Sheet!")
+        new_ws = sheet.add_worksheet(title=sheet_name, rows="100", cols="10")
+        set_with_dataframe(new_ws, order_df)
+        st.success(f"✔️ Order saved to new sheet: {sheet_name}")
     except Exception as e:
-        st.error(f"❗ Error saving to sheet: {e}")
+        st.error(f"❗ Could not save order: {e}")
 
     # Printable Summary
     printable_html = f"""
     <html>
     <head><style>
-        @media print {{
-            button {{ display: none; }}
-        }}
+        @media print {{ button {{ display: none; }} }}
         table {{ width: 100%; border-collapse: collapse; }}
         th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; }}
     </style></head>
@@ -93,13 +86,11 @@ if generate:
     <div style='padding:20px;'>
         <h2>🧾 Order Summary</h2>
         <p><strong>Customer:</strong> {customer_name}</p>
-        <p><strong>Date:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+        <p><strong>Date:</strong> {timestamp}</p>
         <table>
-            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>
-    """
+            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>"""
     for _, row in order_df.iterrows():
         printable_html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Available Qty']}</td><td>{row['Order Quantity']}</td></tr>"
-
     printable_html += f"""
         </table>
         <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
@@ -119,6 +110,6 @@ if generate:
     st.download_button(
         label="⬇️ Download Order Summary as Excel",
         data=to_excel(order_df),
-        file_name=f"order_{customer_name.replace(' ', '_')}.xlsx",
+        file_name=f"order_{sheet_name}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
