@@ -78,7 +78,7 @@ if generate:
     except Exception as e:
         st.error(f"❗ Error saving to sheet: {e}")
 
-    # Print View
+    # Printable Summary
     html = f"""
     <div id='print-area' style='padding:20px;'>
         <h2>🧾 Order Summary</h2>
@@ -96,6 +96,7 @@ if generate:
         <button onclick='window.print()' style='margin-top:10px;padding:10px;background:#4CAF50;color:white;border:none;'>🖨️ Print</button>
     </div>"""
 
+    st.markdown("## 🧾 Download & Print")
     st.components.v1.html(html, height=600, scrolling=True)
 
     def to_excel(df):
