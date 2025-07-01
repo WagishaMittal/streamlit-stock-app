@@ -24,13 +24,20 @@ st.title("📦 Stock Order System")
 df, sheet = load_sheet()
 
 # Step 1: Customer Name Input
-with st.form("name_form"):
-    customer_name = st.text_input("Enter Customer Name")
-    proceed = st.form_submit_button("Proceed")
+if "proceed" not in st.session_state:
+    st.session_state.proceed = False
 
-if not proceed or not customer_name.strip():
+if not st.session_state.proceed:
+    with st.form("name_form"):
+        customer_name = st.text_input("Enter Customer Name")
+        proceed = st.form_submit_button("Proceed")
+        if proceed and customer_name.strip():
+            st.session_state.customer_name = customer_name
+            st.session_state.proceed = True
+            st.rerun()
     st.stop()
 
+customer_name = st.session_state.customer_name
 st.success(f"Placing order for: {customer_name}")
 st.write("## 📋 Available Products")
 
@@ -48,7 +55,7 @@ with st.form("order_form"):
 # Step 3: Generate Summary and Save
 if generate:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
+    selected_items = []
     for i, row in df.iterrows():
         qty = qty_inputs[i]
         if qty > 0:
@@ -63,6 +70,14 @@ if generate:
         st.stop()
 
     order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
+    st.session_state["order_df"] = order_df
+    st.session_state["order_time"] = timestamp
+    st.rerun()
+
+# Step 4: Show Order Summary (if present)
+if "order_df" in st.session_state:
+    order_df = st.session_state["order_df"]
+    timestamp = st.session_state["order_time"]
 
     # Save to central 'Orders' sheet
     try:
@@ -71,28 +86,51 @@ if generate:
         except gspread.exceptions.WorksheetNotFound:
             orders_ws = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
 
-        existing_orders = get_as_dataframe(orders_ws).dropna(how='all')
-        updated_orders = pd.concat([existing_orders, order_df], ignore_index=True)
+        try:
+            existing_orders = get_as_dataframe(orders_ws).dropna(how='all')
+            updated_orders = pd.concat([existing_orders, order_df], ignore_index=True)
+        except Exception:
+            updated_orders = order_df.copy()
+
         orders_ws.clear()
         set_with_dataframe(orders_ws, updated_orders)
         st.success("✔️ Order saved to sheet: Orders")
     except Exception as e:
         st.error(f"❗ Could not save order: {e}")
 
-    # Printable Summary in Markdown (Streamlit-compatible)
-    st.markdown("## 🧾 Order Summary (Printable View)")
-    st.markdown(f"**Customer Name:** {customer_name}")
-    st.markdown(f"**Order Date:** {timestamp}")
-    
-    summary_md = "| Product | Available Qty | Order Qty |\n|---|---|---|\n"
+    # Printable HTML Receipt (with working print button)
+    html = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: sans-serif; padding: 20px; }}
+            table {{ border-collapse: collapse; width: 100%; margin-top: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            button {{ margin-top: 20px; padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }}
+        </style>
+    </head>
+    <body>
+        <h2>🧾 Order Summary</h2>
+        <p><strong>Customer:</strong> {customer_name}</p>
+        <p><strong>Date:</strong> {timestamp}</p>
+        <table>
+            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>
+    """
     for _, row in order_df.iterrows():
-        summary_md += f"| {row['SkuShortName']} | {row['Available Qty']} | {row['Order Quantity']} |\n"
-    
-    st.markdown(summary_md)
-    st.markdown(f"**Total Items Ordered:** {order_df['Order Quantity'].sum()}")
-    
-    st.info("To print this page, use your browser's Print option (Ctrl+P or Cmd+P)")
+        html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Available Qty']}</td><td>{row['Order Quantity']}</td></tr>"
 
+    html += f"""
+        </table>
+        <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
+        <button onclick='window.print()'>🖨️ Print</button>
+    </body></html>
+    """
+
+    st.markdown("## 🖨️ Printable Order Summary")
+    st.components.v1.html(html, height=600, scrolling=True)
+
+    # Excel Export
     def to_excel(df):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
