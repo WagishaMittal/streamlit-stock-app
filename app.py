@@ -16,12 +16,12 @@ def load_sheet():
     ws = sh.get_worksheet(0)
     df = get_as_dataframe(ws).dropna(how='all')
     df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
-    return df, sh
+    return df, sh, ws
 
 # Load data and sheet
 st.set_page_config(layout="wide")
 st.title("📦 Stock Order System")
-df, sheet = load_sheet()
+df, sheet, ws_inventory = load_sheet()
 
 # Step 1: Customer Name Input
 if "proceed" not in st.session_state:
@@ -52,7 +52,7 @@ with st.form("order_form"):
         qty_inputs[i] = cols[2].number_input("Qty", min_value=0, max_value=int(row["Available Qty"]), step=1, key=f"qty_{i}")
     generate = st.form_submit_button("✅ Submit Order")
 
-# Step 3: Generate Summary and Save
+# Step 3: Generate Summary, Save, and Update Inventory
 if generate:
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     selected_items = []
@@ -64,6 +64,8 @@ if generate:
             row_data["Customer Name"] = customer_name
             row_data["Timestamp"] = timestamp
             selected_items.append(row_data)
+            # Reduce inventory in df
+            df.at[i, "Available Qty"] -= qty
 
     if not selected_items:
         st.warning("⚠️ No items selected!")
@@ -72,6 +74,15 @@ if generate:
     order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
     st.session_state["order_df"] = order_df
     st.session_state["order_time"] = timestamp
+
+    # Update inventory sheet
+    try:
+        ws_inventory.clear()
+        set_with_dataframe(ws_inventory, df)
+        st.success("✅ Inventory updated successfully.")
+    except Exception as e:
+        st.error(f"❗ Failed to update inventory: {e}")
+
     st.rerun()
 
 # Step 4: Show Order Summary (if present)
