@@ -7,7 +7,6 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # Load Google Sheet
-
 def load_sheet():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -80,36 +79,19 @@ if generate:
     except Exception as e:
         st.error(f"❗ Could not save order: {e}")
 
-    # Printable Summary
-    st.markdown("## 🧾 Order Summary")
-    st.dataframe(order_df)
-
-    printable_html = f"""
-    <div style='padding:20px;'>
-        <h2>🧾 Order Summary</h2>
-        <p><strong>Customer:</strong> {customer_name}</p>
-        <p><strong>Date:</strong> {timestamp}</p>
-        <table style='width:100%; border-collapse: collapse;'>
-            <thead>
-                <tr><th style='border:1px solid #ccc; padding:8px;'>Product</th>
-                    <th style='border:1px solid #ccc; padding:8px;'>Available</th>
-                    <th style='border:1px solid #ccc; padding:8px;'>Ordered</th></tr>
-            </thead>
-            <tbody>
-    """
+    # Printable Summary in Markdown (Streamlit-compatible)
+    st.markdown("## 🧾 Order Summary (Printable View)")
+    st.markdown(f"**Customer Name:** {customer_name}")
+    st.markdown(f"**Order Date:** {timestamp}")
+    
+    summary_md = "| Product | Available Qty | Order Qty |\n|---|---|---|\n"
     for _, row in order_df.iterrows():
-        printable_html += f"<tr><td style='border:1px solid #ccc; padding:8px;'>{row['SkuShortName']}</td>"
-        printable_html += f"<td style='border:1px solid #ccc; padding:8px;'>{row['Available Qty']}</td>"
-        printable_html += f"<td style='border:1px solid #ccc; padding:8px;'>{row['Order Quantity']}</td></tr>"
-
-    printable_html += f"""
-            </tbody>
-        </table>
-        <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
-        <button onclick='window.print()' style='margin-top:10px;padding:10px 20px;background:#4CAF50;color:white;border:none;border-radius:5px;'>🖨️ Print</button>
-    </div>"""
-
-    st.components.v1.html(printable_html, height=600, scrolling=True)
+        summary_md += f"| {row['SkuShortName']} | {row['Available Qty']} | {row['Order Quantity']} |\n"
+    
+    st.markdown(summary_md)
+    st.markdown(f"**Total Items Ordered:** {order_df['Order Quantity'].sum()}")
+    
+    st.info("To print this page, use your browser's Print option (Ctrl+P or Cmd+P)")
 
     def to_excel(df):
         output = BytesIO()
