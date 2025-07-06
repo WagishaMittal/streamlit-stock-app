@@ -88,7 +88,41 @@ if st.session_state.viewing_cart:
         st.session_state.cart[i]["Remark"] = st.text_input(f"Remark for {item['SkuShortName']}", item["Remark"], key=f"remark_{i}")
 
     if st.button("✅ Submit Order"):
-        st.success("Order submitted successfully! (Next: integrate saving & inventory updates)")
+        order_df = pd.DataFrame(st.session_state.cart)
+
+        # Save to "Orders" sheet
+        try:
+            try:
+                orders_ws = sheet.worksheet("Orders")
+            except gspread.exceptions.WorksheetNotFound:
+                orders_ws = sheet.add_worksheet(title="Orders", rows="1000", cols="20")
+
+            existing_orders = get_as_dataframe(orders_ws).dropna(how='all')
+            updated_orders = pd.concat([existing_orders, order_df], ignore_index=True)
+            orders_ws.clear()
+            set_with_dataframe(orders_ws, updated_orders)
+            st.success("✔️ Order saved to Google Sheet")
+        except Exception as e:
+            st.error(f"❗ Failed to save order: {e}")
+
+        # Update inventory
+        for item in st.session_state.cart:
+            product = item["SkuShortName"]
+            qty = item["Order Quantity"]
+            df.loc[df["SkuShortName"] == product, "Available Qty"] -= qty
+        ws_inventory.clear()
+        set_with_dataframe(ws_inventory, df)
+
+        # Print summary
+        html = f"<h2>🧾 Order Summary</h2><p><b>Login ID:</b> {st.session_state.username}<br><b>Customer:</b> {st.session_state.customer_name}</p><table border='1' cellpadding='6' cellspacing='0'><tr><th>Product</th><th>Qty</th><th>Price</th><th>Remark</th></tr>"
+        for _, row in order_df.iterrows():
+            html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Order Quantity']}</td><td>{row['Price']}</td><td>{row['Remark']}</td></tr>"
+        html += f"</table><p><b>Total Items:</b> {order_df['Order Quantity'].sum()}</p><button onclick='window.print()'>🖨️ Print</button>"
+        st.components.v1.html(html, height=600, scrolling=True)
+
+        st.session_state.cart = []
+        st.session_state.viewing_cart = False
+        st.rerun()
 
     if st.button("⬅ Back to Products"):
         st.session_state.viewing_cart = False
