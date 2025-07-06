@@ -53,18 +53,6 @@ if not st.session_state.customer_name:
             st.rerun()
     st.stop()
 
-# --- Load Google Sheet ---
-def load_sheet():
-    creds_dict = st.secrets["gcp_service_account"]
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
-    gc = gspread.authorize(credentials)
-    sh = gc.open_by_key("1PrsSMbPddsn1FnjC4Fao2XJ63f1kG4u8X9aWZwmdK1A")
-    ws = sh.get_worksheet(0)
-    df = get_as_dataframe(ws).dropna(how='all')
-    df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
-    return df, sh, ws
-
 # --- Initialize Session State ---
 if "cart" not in st.session_state:
     st.session_state.cart = []
@@ -74,6 +62,22 @@ if "search" not in st.session_state:
     st.session_state.search = ""
 if "viewing_cart" not in st.session_state:
     st.session_state.viewing_cart = False
+
+# --- Load Google Sheet ---
+def load_sheet():
+    try:
+        creds_dict = st.secrets["gcp_service_account"]
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        gc = gspread.authorize(credentials)
+        sh = gc.open_by_key("1PrsSMbPddsn1FnjC4Fao2XJ63f1kG4u8X9aWZwmdK1A")
+        ws = sh.get_worksheet(0)
+        df = get_as_dataframe(ws).dropna(how='all')
+        df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
+        return df, sh, ws
+    except Exception as e:
+        st.error("Failed to load Google Sheet. Please check your credentials or network connection.")
+        st.stop()
 
 # --- Load and Filter Inventory ---
 df, sheet, ws_inventory = load_sheet()
