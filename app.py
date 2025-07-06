@@ -93,7 +93,6 @@ if st.session_state.viewing_cart:
 
     if st.button("✅ Submit Order"):
         order_df = pd.DataFrame(st.session_state.cart)
-        order_df.insert(0, "Customer ID", st.session_state.customer_id)
 
         try:
             try:
