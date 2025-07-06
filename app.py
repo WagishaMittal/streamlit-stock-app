@@ -151,6 +151,20 @@ if st.session_state.cart:
         except Exception as e:
             st.error(f"❗ Failed to save order: {e}")
 
+        # Reduce inventory quantities
+        for item in st.session_state.cart:
+            product_name = item["SkuShortName"]
+            qty_ordered = item["Order Quantity"]
+            df.loc[df["SkuShortName"] == product_name, "Available Qty"] -= qty_ordered
+
+        # Update inventory sheet
+        try:
+            ws_inventory.clear()
+            set_with_dataframe(ws_inventory, df)
+            st.success("📦 Inventory updated successfully")
+        except Exception as e:
+            st.error(f"❗ Failed to update inventory: {e}")
+
         # Show printable summary
         html = f"<h2>🧾 Order Summary</h2><p><b>Customer:</b> {st.session_state.username}</p><table border='1' cellpadding='6' cellspacing='0'><tr><th>Product</th><th>Qty</th><th>Price</th><th>Remark</th></tr>"
         for _, row in summary_df.iterrows():
