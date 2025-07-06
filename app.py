@@ -5,6 +5,7 @@ from gspread_dataframe import get_as_dataframe, set_with_dataframe
 from io import BytesIO
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import streamlit.components.v1 as components
 
 # --- Configuration ---
 USERS = {
@@ -90,7 +91,6 @@ if st.session_state.viewing_cart:
     if st.button("✅ Submit Order"):
         order_df = pd.DataFrame(st.session_state.cart)
 
-        # Save to "Orders" sheet
         try:
             try:
                 orders_ws = sheet.worksheet("Orders")
@@ -105,7 +105,6 @@ if st.session_state.viewing_cart:
         except Exception as e:
             st.error(f"❗ Failed to save order: {e}")
 
-        # Update inventory
         for item in st.session_state.cart:
             product = item["SkuShortName"]
             qty = item["Order Quantity"]
@@ -113,12 +112,37 @@ if st.session_state.viewing_cart:
         ws_inventory.clear()
         set_with_dataframe(ws_inventory, df)
 
-        # Print summary
-        html = f"<h2>🧾 Order Summary</h2><p><b>Login ID:</b> {st.session_state.username}<br><b>Customer:</b> {st.session_state.customer_name}</p><table border='1' cellpadding='6' cellspacing='0'><tr><th>Product</th><th>Qty</th><th>Price</th><th>Remark</th></tr>"
+        html = f"""
+        <html>
+        <head>
+        <script>
+        function printDiv() {{
+            var printContents = document.getElementById('print-area').innerHTML;
+            var originalContents = document.body.innerHTML;
+            document.body.innerHTML = printContents;
+            window.print();
+            document.body.innerHTML = originalContents;
+        }}
+        </script>
+        </head>
+        <body>
+        <div id='print-area'>
+        <h2>🧾 Order Summary</h2>
+        <p><b>Login ID:</b> {st.session_state.username}<br><b>Customer:</b> {st.session_state.customer_name}</p>
+        <table border='1' cellpadding='6' cellspacing='0'>
+        <tr><th>Product</th><th>Qty</th><th>Price</th><th>Remark</th></tr>
+        """
         for _, row in order_df.iterrows():
             html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Order Quantity']}</td><td>{row['Price']}</td><td>{row['Remark']}</td></tr>"
-        html += f"</table><p><b>Total Items:</b> {order_df['Order Quantity'].sum()}</p><button onclick='window.print()'>🖨️ Print</button>"
-        st.components.v1.html(html, height=600, scrolling=True)
+        html += f"""
+        </table>
+        <p><b>Total Items:</b> {order_df['Order Quantity'].sum()}</p>
+        </div>
+        <button onclick='printDiv()'>🖨️ Print Summary</button>
+        </body>
+        </html>
+        """
+        components.html(html, height=700, scrolling=True)
 
         st.session_state.cart = []
         st.session_state.viewing_cart = False
@@ -130,13 +154,12 @@ if st.session_state.viewing_cart:
 
     st.stop()
 
-# --- Product Page (if not in cart view) ---
+# --- Product Page ---
 search_term = st.text_input("🔍 Search Products", st.session_state.search)
 st.session_state.search = search_term
 if search_term:
     df = df[df["SkuShortName"].str.contains(search_term, case=False, na=False)]
 
-# --- Pagination ---
 total_pages = (len(df) - 1) // ITEMS_PER_PAGE + 1
 start_idx = st.session_state.page * ITEMS_PER_PAGE
 end_idx = start_idx + ITEMS_PER_PAGE
