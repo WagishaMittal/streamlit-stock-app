@@ -50,7 +50,7 @@ if not st.session_state.customer_name:
             st.session_state.customer_name = customer_name
             st.session_state.customer_id = f"{prefix}{timestamp_suffix}"
             st.success("Customer name recorded. Loading your products...")
-            st.experimental_rerun()
+            st.rerun()
     st.stop()
 
 # --- Initialize Session State ---
@@ -121,13 +121,13 @@ with st.form("product_form"):
     col1, col2, col3 = st.columns(3)
     if col1.form_submit_button("⬅ Previous") and st.session_state.page > 0:
         st.session_state.page -= 1
-        st.experimental_rerun()
+        st.rerun()
     if col2.form_submit_button("Next ➡") and end < len(filtered_df):
         st.session_state.page += 1
-        st.experimental_rerun()
+        st.rerun()
     if col3.form_submit_button("🛒 View Cart"):
         st.session_state.viewing_cart = True
-        st.experimental_rerun()
+        st.rerun()
 
 # --- Cart View ---
 if st.session_state.viewing_cart:
@@ -136,7 +136,7 @@ if st.session_state.viewing_cart:
         st.info("Your cart is empty.")
         if st.button("⬅ Back to Products"):
             st.session_state.viewing_cart = False
-            st.experimental_rerun()
+            st.rerun()
         st.stop()
 
     for i, item in enumerate(st.session_state.cart):
@@ -188,10 +188,10 @@ if st.session_state.viewing_cart:
 
         st.session_state.cart = []
         st.session_state.viewing_cart = False
-        st.experimental_rerun()
+        st.rerun()
 
     if st.button("⬅ Back to Products"):
         st.session_state.viewing_cart = False
-        st.experimental_rerun()
+        st.rerun()
 
     st.stop()
