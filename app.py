@@ -71,6 +71,32 @@ if "viewing_cart" not in st.session_state:
 
 # --- Load and Filter Inventory ---
 df, sheet, ws_inventory = load_sheet()
+
+# --- Cart Review Page ---
+if st.session_state.viewing_cart:
+    st.title("🧾 Review Cart")
+    if not st.session_state.cart:
+        st.info("Your cart is empty. Go back to add items.")
+        if st.button("⬅ Back to Products"):
+            st.session_state.viewing_cart = False
+            st.rerun()
+        st.stop()
+
+    for i, item in enumerate(st.session_state.cart):
+        st.markdown(f"**{item['SkuShortName']}**")
+        st.session_state.cart[i]["Price"] = st.text_input(f"Price for {item['SkuShortName']}", item["Price"], key=f"price_{i}")
+        st.session_state.cart[i]["Remark"] = st.text_input(f"Remark for {item['SkuShortName']}", item["Remark"], key=f"remark_{i}")
+
+    if st.button("✅ Submit Order"):
+        st.success("Order submitted successfully! (Next: integrate saving & inventory updates)")
+
+    if st.button("⬅ Back to Products"):
+        st.session_state.viewing_cart = False
+        st.rerun()
+
+    st.stop()
+
+# --- Product Page (if not in cart view) ---
 search_term = st.text_input("🔍 Search Products", st.session_state.search)
 st.session_state.search = search_term
 if search_term:
@@ -82,50 +108,48 @@ start_idx = st.session_state.page * ITEMS_PER_PAGE
 end_idx = start_idx + ITEMS_PER_PAGE
 current_page_data = df.iloc[start_idx:end_idx]
 
-# --- Product Catalog ---
-if not st.session_state.viewing_cart:
-    st.title("🛒 Product Catalog")
-    st.subheader(f"Logged in as: {st.session_state.username}")
-    st.markdown(f"**Customer Name:** {st.session_state.customer_name}")
+st.title("🛒 Product Catalog")
+st.subheader(f"Logged in as: {st.session_state.username}")
+st.markdown(f"**Customer Name:** {st.session_state.customer_name}")
 
-    with st.form("product_form"):
-        for idx, row in current_page_data.iterrows():
-            st.markdown("---")
-            cols = st.columns([1, 3, 2, 2])
-            if 'Image URL' in row and pd.notna(row['Image URL']):
-                cols[0].image(row['Image URL'], width=80)
-            else:
-                cols[0].empty()
-            cols[1].markdown(f"**{row['SkuShortName']}**")
-            cols[2].markdown(f"Available: {row['Available Qty']}")
-            qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{idx}")
+with st.form("product_form"):
+    for idx, row in current_page_data.iterrows():
+        st.markdown("---")
+        cols = st.columns([1, 3, 2, 2])
+        if 'Image URL' in row and pd.notna(row['Image URL']):
+            cols[0].image(row['Image URL'], width=80)
+        else:
+            cols[0].empty()
+        cols[1].markdown(f"**{row['SkuShortName']}**")
+        cols[2].markdown(f"Available: {row['Available Qty']}")
+        qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{idx}")
 
-            if qty > 0:
-                already_in_cart = any(item['SkuShortName'] == row['SkuShortName'] for item in st.session_state.cart)
-                if not already_in_cart:
-                    st.session_state.cart.append({
-                        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "Login ID": st.session_state.username,
-                        "Customer Name": st.session_state.customer_name,
-                        "SkuShortName": row['SkuShortName'],
-                        "Available Qty": row['Available Qty'],
-                        "Order Quantity": qty,
-                        "Price": "",
-                        "Remark": ""
-                    })
+        if qty > 0:
+            already_in_cart = any(item['SkuShortName'] == row['SkuShortName'] for item in st.session_state.cart)
+            if not already_in_cart:
+                st.session_state.cart.append({
+                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "Login ID": st.session_state.username,
+                    "Customer Name": st.session_state.customer_name,
+                    "SkuShortName": row['SkuShortName'],
+                    "Available Qty": row['Available Qty'],
+                    "Order Quantity": qty,
+                    "Price": "",
+                    "Remark": ""
+                })
 
-        col_prev, col_next = st.columns(2)
-        with col_prev:
-            if st.session_state.page > 0:
-                if st.form_submit_button("⬅ Previous"):
-                    st.session_state.page -= 1
-                    st.rerun()
-        with col_next:
-            if st.session_state.page < total_pages - 1:
-                if st.form_submit_button("Next ➡"):
-                    st.session_state.page += 1
-                    st.rerun()
+    col_prev, col_next = st.columns(2)
+    with col_prev:
+        if st.session_state.page > 0:
+            if st.form_submit_button("⬅ Previous"):
+                st.session_state.page -= 1
+                st.rerun()
+    with col_next:
+        if st.session_state.page < total_pages - 1:
+            if st.form_submit_button("Next ➡"):
+                st.session_state.page += 1
+                st.rerun()
 
-        if st.form_submit_button("🛒 View Cart"):
-            st.session_state.viewing_cart = True
-            st.rerun()
+    if st.form_submit_button("🛒 View Cart"):
+        st.session_state.viewing_cart = True
+        st.rerun()
