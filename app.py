@@ -6,7 +6,6 @@ from io import BytesIO
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import streamlit.components.v1 as components
-import uuid
 
 # --- Configuration ---
 USERS = {
@@ -50,7 +49,8 @@ if not st.session_state.customer_name:
             timestamp_suffix = datetime.now().strftime("%f")[-4:]
             st.session_state.customer_name = customer_name
             st.session_state.customer_id = f"{prefix}{timestamp_suffix}"
-            st.rerun()
+            st.success("Customer name recorded. Loading your products...")
+            st.experimental_rerun()
     st.stop()
 
 # --- Initialize Session State ---
@@ -82,14 +82,61 @@ def load_sheet():
 # --- Load and Filter Inventory ---
 df, sheet, ws_inventory = load_sheet()
 
-# --- Cart Review Page ---
+# --- Product Catalog ---
+st.title("🛒 Product Catalog")
+st.write(f"**Logged in as:** {st.session_state.username}")
+st.write(f"**Customer Name:** {st.session_state.customer_name} ({st.session_state.customer_id})")
+
+search_term = st.text_input("🔍 Search Products")
+filtered_df = df[df["SkuShortName"].str.contains(search_term, case=False, na=False)] if search_term else df
+
+start = st.session_state.page * ITEMS_PER_PAGE
+end = start + ITEMS_PER_PAGE
+paged_df = filtered_df[start:end]
+
+with st.form("product_form"):
+    for idx, row in paged_df.iterrows():
+        st.markdown("---")
+        cols = st.columns([1, 3, 2, 2])
+        image_url = row.get("Image URL", "")
+        if image_url:
+            cols[0].image(image_url, width=80)
+        cols[1].markdown(f"**{row['SkuShortName']}**")
+        cols[2].markdown(f"Available: {row['Available Qty']}")
+        qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{idx}")
+
+        if qty > 0:
+            st.session_state.cart.append({
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Login ID": st.session_state.username,
+                "Customer Name": st.session_state.customer_name,
+                "Customer ID": st.session_state.customer_id,
+                "SkuShortName": row['SkuShortName'],
+                "Available Qty": row['Available Qty'],
+                "Order Quantity": qty,
+                "Price": "",
+                "Remark": ""
+            })
+
+    col1, col2, col3 = st.columns(3)
+    if col1.form_submit_button("⬅ Previous") and st.session_state.page > 0:
+        st.session_state.page -= 1
+        st.experimental_rerun()
+    if col2.form_submit_button("Next ➡") and end < len(filtered_df):
+        st.session_state.page += 1
+        st.experimental_rerun()
+    if col3.form_submit_button("🛒 View Cart"):
+        st.session_state.viewing_cart = True
+        st.experimental_rerun()
+
+# --- Cart View ---
 if st.session_state.viewing_cart:
-    st.title("🧾 Review Cart")
+    st.header("🧾 Review Cart")
     if not st.session_state.cart:
-        st.info("Your cart is empty. Go back to add items.")
+        st.info("Your cart is empty.")
         if st.button("⬅ Back to Products"):
             st.session_state.viewing_cart = False
-            st.rerun()
+            st.experimental_rerun()
         st.stop()
 
     for i, item in enumerate(st.session_state.cart):
@@ -99,13 +146,11 @@ if st.session_state.viewing_cart:
 
     if st.button("✅ Submit Order"):
         order_df = pd.DataFrame(st.session_state.cart)
-
         try:
             try:
                 orders_ws = sheet.worksheet("Orders")
             except gspread.exceptions.WorksheetNotFound:
                 orders_ws = sheet.add_worksheet(title="Orders", rows="1000", cols="20")
-
             existing_orders = get_as_dataframe(orders_ws).dropna(how='all')
             updated_orders = pd.concat([existing_orders, order_df], ignore_index=True)
             orders_ws.clear()
@@ -115,36 +160,18 @@ if st.session_state.viewing_cart:
             st.error(f"❗ Failed to save order: {e}")
 
         for item in st.session_state.cart:
-            product = item["SkuShortName"]
-            qty = item["Order Quantity"]
-            df.loc[df["SkuShortName"] == product, "Available Qty"] -= qty
+            df.loc[df["SkuShortName"] == item["SkuShortName"], "Available Qty"] -= item["Order Quantity"]
         ws_inventory.clear()
         set_with_dataframe(ws_inventory, df)
 
+        # Excel download
         excel_buffer = BytesIO()
-        order_df.to_excel(excel_buffer, index=False, sheet_name="Order Summary")
-        excel_bytes = excel_buffer.getvalue()
+        order_df.to_excel(excel_buffer, index=False)
+        st.download_button("⬇️ Download Order Summary", excel_buffer.getvalue(), file_name=f"order_{st.session_state.customer_id}.xlsx")
 
-        st.download_button(
-            label="⬇️ Download Order Summary",
-            data=excel_bytes,
-            file_name=f"order_summary_{st.session_state.customer_id}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
+        # Printable HTML
         html = f"""
         <html>
-        <head>
-        <script>
-        function printDiv() {{
-            var printContents = document.getElementById('print-area').innerHTML;
-            var originalContents = document.body.innerHTML;
-            document.body.innerHTML = printContents;
-            window.print();
-            document.body.innerHTML = originalContents;
-        }}
-        </script>
-        </head>
         <body>
         <div id='print-area'>
         <h2>🧾 Order Summary</h2>
@@ -156,22 +183,15 @@ if st.session_state.viewing_cart:
         """
         for _, row in order_df.iterrows():
             html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Order Quantity']}</td><td>{row['Price']}</td><td>{row['Remark']}</td></tr>"
-        html += f"""
-        </table>
-        <p><b>Total Items:</b> {order_df['Order Quantity'].sum()}</p>
-        </div>
-        <button onclick='printDiv()'>🖨️ Print Summary</button>
-        </body>
-        </html>
-        """
-        components.html(html, height=700, scrolling=True)
+        html += "</table><br><button onclick='window.print()'>🖨️ Print Summary</button></div></body></html>"
+        components.html(html, height=600)
 
         st.session_state.cart = []
         st.session_state.viewing_cart = False
-        st.rerun()
+        st.experimental_rerun()
 
     if st.button("⬅ Back to Products"):
         st.session_state.viewing_cart = False
-        st.rerun()
+        st.experimental_rerun()
 
     st.stop()
