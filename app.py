@@ -31,7 +31,7 @@ if not st.session_state.authenticated:
             if username in USERS and USERS[username] == password:
                 st.session_state.authenticated = True
                 st.session_state.username = username
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Invalid username or password")
     st.stop()
@@ -103,12 +103,12 @@ with st.form("product_form"):
         if st.session_state.page > 0:
             if st.form_submit_button("⬅ Previous"):
                 st.session_state.page -= 1
-                st.experimental_rerun()
+                st.rerun()
     with col_next:
         if st.session_state.page < total_pages - 1:
             if st.form_submit_button("Next ➡"):
                 st.session_state.page += 1
-                st.experimental_rerun()
+                st.rerun()
 
     st.form_submit_button("🛒 View Cart")
 
@@ -176,4 +176,4 @@ if st.session_state.cart:
         # Reset cart
         if st.button("🧹 Clear Cart"):
             st.session_state.cart = []
-            st.experimental_rerun()
+            st.rerun()
