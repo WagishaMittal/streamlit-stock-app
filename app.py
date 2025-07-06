@@ -6,7 +6,37 @@ from io import BytesIO
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-# Load Google Sheet
+# --- Configuration ---
+USERS = {
+    "user1": "pass1",
+    "user2": "pass2",
+    "user3": "pass3",
+    "user4": "pass4",
+    "user5": "pass5",
+}
+ITEMS_PER_PAGE = 10
+
+# --- Auth ---
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.username = None
+
+if not st.session_state.authenticated:
+    with st.form("login_form"):
+        st.title("🔐 Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        login = st.form_submit_button("Login")
+        if login:
+            if username in USERS and USERS[username] == password:
+                st.session_state.authenticated = True
+                st.session_state.username = username
+                st.experimental_rerun()
+            else:
+                st.error("Invalid username or password")
+    st.stop()
+
+# --- Load Google Sheet ---
 def load_sheet():
     creds_dict = st.secrets["gcp_service_account"]
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -18,130 +48,75 @@ def load_sheet():
     df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0).astype(int)
     return df, sh, ws
 
-# Load data and sheet
-st.set_page_config(layout="wide")
-st.title("📦 Stock Order System")
+# --- Initialize Session State ---
+if "cart" not in st.session_state:
+    st.session_state.cart = []
+if "page" not in st.session_state:
+    st.session_state.page = 0
+if "search" not in st.session_state:
+    st.session_state.search = ""
+
+# --- Load and Filter Inventory ---
 df, sheet, ws_inventory = load_sheet()
+search_term = st.text_input("🔍 Search Products", st.session_state.search)
+st.session_state.search = search_term
+if search_term:
+    df = df[df["SkuShortName"].str.contains(search_term, case=False, na=False)]
 
-# Step 1: Customer Name Input
-if "proceed" not in st.session_state:
-    st.session_state.proceed = False
+# --- Pagination ---
+total_pages = (len(df) - 1) // ITEMS_PER_PAGE + 1
+start_idx = st.session_state.page * ITEMS_PER_PAGE
+end_idx = start_idx + ITEMS_PER_PAGE
+current_page_data = df.iloc[start_idx:end_idx]
 
-if not st.session_state.proceed:
-    with st.form("name_form"):
-        customer_name = st.text_input("Enter Customer Name")
-        proceed = st.form_submit_button("Proceed")
-        if proceed and customer_name.strip():
-            st.session_state.customer_name = customer_name
-            st.session_state.proceed = True
-            st.rerun()
-    st.stop()
+# --- Product Selection ---
+st.title("🛒 Product Catalog")
+st.subheader(f"Welcome, {st.session_state.username}")
 
-customer_name = st.session_state.customer_name
-st.success(f"Placing order for: {customer_name}")
-st.write("## 📋 Available Products")
+with st.form("product_form"):
+    for idx, row in current_page_data.iterrows():
+        st.markdown("---")
+        cols = st.columns([1, 3, 2, 2, 2])
+        if 'Image URL' in row and pd.notna(row['Image URL']):
+            cols[0].image(row['Image URL'], width=80)
+        else:
+            cols[0].empty()
+        cols[1].markdown(f"**{row['SkuShortName']}**")
+        cols[2].markdown(f"Available: {row['Available Qty']}")
+        qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{idx}")
+        price = cols[4].text_input("Price", key=f"price_{idx}")
+        remark = st.text_input("Remark (optional)", key=f"remark_{idx}")
 
-# Step 2: Quantity Selection
-selected_items = []
-qty_inputs = {}
-with st.form("order_form"):
-    for i, row in df.iterrows():
-        cols = st.columns([6, 3, 3])
-        cols[0].markdown(f"**{row['SkuShortName']}**")
-        cols[1].markdown(f"Available: {row['Available Qty']}")
-        qty_inputs[i] = cols[2].number_input("Qty", min_value=0, max_value=int(row["Available Qty"]), step=1, key=f"qty_{i}")
-    generate = st.form_submit_button("✅ Submit Order")
-
-# Step 3: Generate Summary, Save, and Update Inventory
-if generate:
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    selected_items = []
-    for i, row in df.iterrows():
-        qty = qty_inputs[i]
         if qty > 0:
-            row_data = row.to_dict()
-            row_data["Order Quantity"] = qty
-            row_data["Customer Name"] = customer_name
-            row_data["Timestamp"] = timestamp
-            selected_items.append(row_data)
-            # Reduce inventory in df
-            df.at[i, "Available Qty"] -= qty
+            st.session_state.cart.append({
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Customer Name": st.session_state.username,
+                "SkuShortName": row['SkuShortName'],
+                "Available Qty": row['Available Qty'],
+                "Order Quantity": qty,
+                "Price": price,
+                "Remark": remark
+            })
 
-    if not selected_items:
-        st.warning("⚠️ No items selected!")
-        st.stop()
+    col_prev, col_next = st.columns(2)
+    with col_prev:
+        if st.session_state.page > 0:
+            if st.form_submit_button("⬅ Previous"):
+                st.session_state.page -= 1
+                st.experimental_rerun()
+    with col_next:
+        if st.session_state.page < total_pages - 1:
+            if st.form_submit_button("Next ➡"):
+                st.session_state.page += 1
+                st.experimental_rerun()
+    st.form_submit_button("✅ Submit & Review Order")
 
-    order_df = pd.DataFrame(selected_items)[["Timestamp", "Customer Name", "SkuShortName", "Available Qty", "Order Quantity"]]
-    st.session_state["order_df"] = order_df
-    st.session_state["order_time"] = timestamp
+# --- Show Summary ---
+if st.session_state.cart:
+    st.markdown("## 🧾 Order Summary")
+    summary_df = pd.DataFrame(st.session_state.cart)
+    st.dataframe(summary_df)
 
-    # Update inventory sheet
-    try:
-        ws_inventory.clear()
-        set_with_dataframe(ws_inventory, df)
-        st.success("✅ Inventory updated successfully.")
-    except Exception as e:
-        st.error(f"❗ Failed to update inventory: {e}")
-
-    st.rerun()
-
-# Step 4: Show Order Summary (if present)
-if "order_df" in st.session_state:
-    order_df = st.session_state["order_df"]
-    timestamp = st.session_state["order_time"]
-
-    # Save to central 'Orders' sheet
-    try:
-        try:
-            orders_ws = sheet.worksheet("Orders")
-        except gspread.exceptions.WorksheetNotFound:
-            orders_ws = sheet.add_worksheet(title="Orders", rows="1000", cols="10")
-
-        try:
-            existing_orders = get_as_dataframe(orders_ws).dropna(how='all')
-            updated_orders = pd.concat([existing_orders, order_df], ignore_index=True)
-        except Exception:
-            updated_orders = order_df.copy()
-
-        orders_ws.clear()
-        set_with_dataframe(orders_ws, updated_orders)
-        st.success("✔️ Order saved to sheet: Orders")
-    except Exception as e:
-        st.error(f"❗ Could not save order: {e}")
-
-    # Printable HTML Receipt (with working print button)
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: sans-serif; padding: 20px; }}
-            table {{ border-collapse: collapse; width: 100%; margin-top: 20px; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
-            button {{ margin-top: 20px; padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }}
-        </style>
-    </head>
-    <body>
-        <h2>🧾 Order Summary</h2>
-        <p><strong>Customer:</strong> {customer_name}</p>
-        <p><strong>Date:</strong> {timestamp}</p>
-        <table>
-            <tr><th>Product</th><th>Available</th><th>Ordered</th></tr>
-    """
-    for _, row in order_df.iterrows():
-        html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Available Qty']}</td><td>{row['Order Quantity']}</td></tr>"
-
-    html += f"""
-        </table>
-        <p><strong>Total Ordered:</strong> {order_df['Order Quantity'].sum()}</p>
-        <button onclick='window.print()'>🖨️ Print</button>
-    </body></html>
-    """
-
-    st.markdown("## 🖨️ Printable Order Summary")
-    st.components.v1.html(html, height=600, scrolling=True)
-
-    # Excel Export
     def to_excel(df):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -149,8 +124,36 @@ if "order_df" in st.session_state:
         return output.getvalue()
 
     st.download_button(
-        label="⬇️ Download Order Summary as Excel",
-        data=to_excel(order_df),
-        file_name=f"order_{customer_name.replace(' ', '_')}_{timestamp.replace(':', '-')}.xlsx",
+        label="⬇️ Download Order Summary",
+        data=to_excel(summary_df),
+        file_name=f"order_{st.session_state.username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+    # Save to Orders sheet
+    try:
+        try:
+            orders_ws = sheet.worksheet("Orders")
+        except gspread.exceptions.WorksheetNotFound:
+            orders_ws = sheet.add_worksheet(title="Orders", rows="1000", cols="20")
+
+        existing_orders = get_as_dataframe(orders_ws).dropna(how='all')
+        updated_orders = pd.concat([existing_orders, summary_df], ignore_index=True)
+        orders_ws.clear()
+        set_with_dataframe(orders_ws, updated_orders)
+        st.success("✔️ Order saved to Google Sheet")
+    except Exception as e:
+        st.error(f"❗ Failed to save order: {e}")
+
+    # Show printable summary
+    html = f"<h2>🧾 Order Summary</h2><p><b>Customer:</b> {st.session_state.username}</p><table border='1' cellpadding='6' cellspacing='0'><tr><th>Product</th><th>Qty</th><th>Price</th><th>Remark</th></tr>"
+    for _, row in summary_df.iterrows():
+        html += f"<tr><td>{row['SkuShortName']}</td><td>{row['Order Quantity']}</td><td>{row['Price']}</td><td>{row['Remark']}</td></tr>"
+    html += f"</table><p><b>Total Items:</b> {summary_df['Order Quantity'].sum()}</p><button onclick='window.print()'>🖨️ Print</button>"
+
+    st.components.v1.html(html, height=600, scrolling=True)
+
+    # Reset cart
+    if st.button("🧹 Clear Cart"):
+        st.session_state.cart = []
+        st.experimental_rerun()
