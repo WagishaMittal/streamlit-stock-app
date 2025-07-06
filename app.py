@@ -6,6 +6,7 @@ from io import BytesIO
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import streamlit.components.v1 as components
+import uuid
 
 # --- Configuration ---
 USERS = {
@@ -22,6 +23,7 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.username = None
     st.session_state.customer_name = ""
+    st.session_state.customer_id = ""
 
 if not st.session_state.authenticated:
     with st.form("login_form"):
@@ -45,6 +47,7 @@ if not st.session_state.customer_name:
         submit_customer = st.form_submit_button("Proceed")
         if submit_customer and customer_name.strip():
             st.session_state.customer_name = customer_name
+            st.session_state.customer_id = str(uuid.uuid4())[:8]
             st.rerun()
     st.stop()
 
@@ -90,6 +93,7 @@ if st.session_state.viewing_cart:
 
     if st.button("✅ Submit Order"):
         order_df = pd.DataFrame(st.session_state.cart)
+        order_df.insert(0, "Customer ID", st.session_state.customer_id)
 
         try:
             try:
@@ -128,7 +132,9 @@ if st.session_state.viewing_cart:
         <body>
         <div id='print-area'>
         <h2>🧾 Order Summary</h2>
-        <p><b>Login ID:</b> {st.session_state.username}<br><b>Customer:</b> {st.session_state.customer_name}</p>
+        <p><b>Customer ID:</b> {st.session_state.customer_id}<br>
+        <b>Login ID:</b> {st.session_state.username}<br>
+        <b>Customer:</b> {st.session_state.customer_name}</p>
         <table border='1' cellpadding='6' cellspacing='0'>
         <tr><th>Product</th><th>Qty</th><th>Price</th><th>Remark</th></tr>
         """
@@ -188,6 +194,7 @@ with st.form("product_form"):
                     "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "Login ID": st.session_state.username,
                     "Customer Name": st.session_state.customer_name,
+                    "Customer ID": st.session_state.customer_id,
                     "SkuShortName": row['SkuShortName'],
                     "Available Qty": row['Available Qty'],
                     "Order Quantity": qty,
