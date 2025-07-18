@@ -62,8 +62,6 @@ if "search" not in st.session_state:
     st.session_state.search = ""
 if "viewing_cart" not in st.session_state:
     st.session_state.viewing_cart = False
-if "order_complete" not in st.session_state:
-    st.session_state.order_complete = False
 
 # --- Load Google Sheet ---
 def load_sheet():
@@ -85,52 +83,49 @@ def load_sheet():
 df, sheet, ws_inventory = load_sheet()
 
 # --- Product Catalog ---
-if not st.session_state.viewing_cart:
-    st.title("🛒 Product Catalog")
-    st.write(f"**Logged in as:** {st.session_state.username}")
-    st.write(f"**Customer Name:** {st.session_state.customer_name} ({st.session_state.customer_id})")
+st.title("🛒 Product Catalog")
+st.write(f"**Logged in as:** {st.session_state.username}")
+st.write(f"**Customer Name:** {st.session_state.customer_name} ({st.session_state.customer_id})")
 
-    search_term = st.text_input("🔍 Search Products")
-    filtered_df = df[df["SkuShortName"].str.contains(search_term, case=False, na=False)] if search_term else df
+search_term = st.text_input("🔍 Search Products")
+filtered_df = df[df["SkuShortName"].str.contains(search_term, case=False, na=False)] if search_term else df
 
-    start = st.session_state.page * ITEMS_PER_PAGE
-    end = start + ITEMS_PER_PAGE
-    paged_df = filtered_df[start:end]
+start = st.session_state.page * ITEMS_PER_PAGE
+end = start + ITEMS_PER_PAGE
+paged_df = filtered_df[start:end]
 
-    with st.form("product_form"):
-        for idx, row in paged_df.iterrows():
-            st.markdown("---")
-            cols = st.columns([1, 3, 2, 2])
-            image_url = row.get("Image URL", "")
-            if image_url:
-                cols[0].image(image_url, width=80)
-            cols[1].markdown(f"**{row['SkuShortName']}**")
-            cols[2].markdown(f"Available: {row['Available Qty']}")
-            qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{idx}")
+for idx, row in paged_df.iterrows():
+    st.markdown("---")
+    cols = st.columns([1, 3, 2, 2, 2])
+    image_url = row.get("Image URL", "")
+    if image_url:
+        cols[0].image(image_url, width=80)
+    cols[1].markdown(f"**{row['SkuShortName']}**")
+    cols[2].markdown(f"Available: {row['Available Qty']}")
+    qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{idx}")
+    if cols[4].button("➕ Add to Order", key=f"add_{idx}") and qty > 0:
+        st.session_state.cart.append({
+            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "Login ID": st.session_state.username,
+            "Customer Name": st.session_state.customer_name,
+            "Customer ID": st.session_state.customer_id,
+            "SkuShortName": row['SkuShortName'],
+            "Available Qty": row['Available Qty'],
+            "Order Quantity": qty,
+            "Price": "",
+            "Remark": ""
+        })
 
-            if qty > 0:
-                st.session_state.cart.append({
-                    "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "Login ID": st.session_state.username,
-                    "Customer Name": st.session_state.customer_name,
-                    "Customer ID": st.session_state.customer_id,
-                    "SkuShortName": row['SkuShortName'],
-                    "Available Qty": row['Available Qty'],
-                    "Order Quantity": qty,
-                    "Price": "",
-                    "Remark": ""
-                })
-
-        col1, col2, col3 = st.columns(3)
-        if col1.form_submit_button("⬅ Previous") and st.session_state.page > 0:
-            st.session_state.page -= 1
-            st.rerun()
-        if col2.form_submit_button("Next ➡") and end < len(filtered_df):
-            st.session_state.page += 1
-            st.rerun()
-        if col3.form_submit_button("🛒 View Cart"):
-            st.session_state.viewing_cart = True
-            st.rerun()
+col1, col2, col3 = st.columns(3)
+if col1.button("⬅ Previous") and st.session_state.page > 0:
+    st.session_state.page -= 1
+    st.rerun()
+if col2.button("Next ➡") and end < len(filtered_df):
+    st.session_state.page += 1
+    st.rerun()
+if col3.button("🛒 View Final Cart"):
+    st.session_state.viewing_cart = True
+    st.rerun()
 
 # --- Cart View ---
 if st.session_state.viewing_cart:
@@ -147,7 +142,7 @@ if st.session_state.viewing_cart:
         st.session_state.cart[i]["Price"] = st.text_input(f"Price for {item['SkuShortName']}", item["Price"], key=f"price_{i}")
         st.session_state.cart[i]["Remark"] = st.text_input(f"Remark for {item['SkuShortName']}", item["Remark"], key=f"remark_{i}")
 
-    if not st.session_state.order_complete and st.button("✅ Submit Order"):
+    if st.button("✅ Submit Order"):
         order_df = pd.DataFrame(st.session_state.cart)
         try:
             try:
@@ -187,14 +182,9 @@ if st.session_state.viewing_cart:
         html += "</table><br><button onclick='window.print()'>🖨️ Print Summary</button></div></body></html>"
         components.html(html, height=600)
 
-        st.session_state.order_complete = True
-
-    if st.session_state.order_complete:
-        if st.button("🆕 Start New Order"):
-            st.session_state.cart = []
-            st.session_state.viewing_cart = False
-            st.session_state.order_complete = False
-            st.rerun()
+        st.session_state.cart = []
+        st.session_state.viewing_cart = False
+        st.rerun()
 
     if st.button("⬅ Back to Products"):
         st.session_state.viewing_cart = False
