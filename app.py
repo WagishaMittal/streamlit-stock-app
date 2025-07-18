@@ -187,12 +187,18 @@ if st.session_state.viewing_cart:
         html += "</table><br><button onclick='window.print()'>🖨️ Print Summary</button></div></body></html>"
         components.html(html, height=600)
 
-        st.session_state.cart = []
-        st.session_state.viewing_cart = False
-        st.rerun()
+        st.session_state.order_complete = True
+
+    if st.session_state.order_complete:
+        if st.button("🆕 Start New Order"):
+            st.session_state.cart = []
+            st.session_state.viewing_cart = False
+            st.session_state.order_complete = False
+            st.rerun()
 
     if st.button("⬅ Back to Products"):
         st.session_state.viewing_cart = False
         st.rerun()
 
     st.stop()
+
