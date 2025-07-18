@@ -95,26 +95,31 @@ end = start + ITEMS_PER_PAGE
 paged_df = filtered_df[start:end]
 
 for idx, row in paged_df.iterrows():
-    st.markdown("---")
-    cols = st.columns([1, 3, 2, 2, 2])
+    st.markdown("<div style='margin-bottom: -15px;'></div>", unsafe_allow_html=True)
+    cols = st.columns([1, 3, 2, 2])
     image_url = row.get("Image URL", "")
     if image_url:
         cols[0].image(image_url, width=80)
     cols[1].markdown(f"**{row['SkuShortName']}**")
     cols[2].markdown(f"Available: {row['Available Qty']}")
     qty = cols[3].number_input("Qty", 0, int(row["Available Qty"]), key=f"qty_{idx}")
-    if cols[4].button("➕ Add to Order", key=f"add_{idx}") and qty > 0:
-        st.session_state.cart.append({
-            "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "Login ID": st.session_state.username,
-            "Customer Name": st.session_state.customer_name,
-            "Customer ID": st.session_state.customer_id,
-            "SkuShortName": row['SkuShortName'],
-            "Available Qty": row['Available Qty'],
-            "Order Quantity": qty,
-            "Price": "",
-            "Remark": ""
-        })
+
+    if st.button(f"➕ Add to Order - {row['SkuShortName']}", key=f"add_{idx}") and qty > 0:
+        existing = next((item for item in st.session_state.cart if item['SkuShortName'] == row['SkuShortName']), None)
+        if existing:
+            existing["Order Quantity"] = qty
+        else:
+            st.session_state.cart.append({
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Login ID": st.session_state.username,
+                "Customer Name": st.session_state.customer_name,
+                "Customer ID": st.session_state.customer_id,
+                "SkuShortName": row['SkuShortName'],
+                "Available Qty": row['Available Qty'],
+                "Order Quantity": qty,
+                "Price": "",
+                "Remark": ""
+            })
 
 col1, col2, col3 = st.columns(3)
 if col1.button("⬅ Previous") and st.session_state.page > 0:
@@ -123,7 +128,7 @@ if col1.button("⬅ Previous") and st.session_state.page > 0:
 if col2.button("Next ➡") and end < len(filtered_df):
     st.session_state.page += 1
     st.rerun()
-if col3.button("🛒 View Final Cart"):
+if col3.button("🛒 Add to Cart"):
     st.session_state.viewing_cart = True
     st.rerun()
 
